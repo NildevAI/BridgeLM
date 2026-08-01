@@ -268,7 +268,7 @@ static class DashboardPlaceholder
 		<body>
 			<main>
 				<h1>NilDev.BridgeLM</h1>
-				<p>The backend proxy is running. The React dashboard scaffold is the next layer and will replace this placeholder once the frontend toolchain is available.</p>
+				<p>The backend proxy is running, but the static dashboard assets were not found in wwwroot.</p>
 				<ul>
 					<li><code>GET /api/config</code> exposes the effective runtime configuration.</li>
 					<li><code>GET /api/requests</code> lists recent proxied calls stored in SQLite through Dapper.</li>

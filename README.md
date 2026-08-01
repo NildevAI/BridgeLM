@@ -1,6 +1,6 @@
 # NilDev.BridgeLM
 
-NilDev.BridgeLM is a .NET 10 bridge service that proxies LLM traffic, records requests and responses with SQLite, broadcasts live lifecycle events through SignalR, and serves a React monitoring dashboard from the same container image.
+NilDev.BridgeLM is a .NET 10 bridge service that proxies LLM traffic, records requests and responses with SQLite, broadcasts live lifecycle events through SignalR, and serves a plain JavaScript monitoring dashboard from the same container image.
 
 ## Current shape
 
@@ -8,7 +8,6 @@ NilDev.BridgeLM is a .NET 10 bridge service that proxies LLM traffic, records re
 - `src/NilDev.BridgeLM.Application` contains orchestration for request tracking, forwarding, configuration updates, and event emission.
 - `src/NilDev.BridgeLM.Domain` contains contracts and models for proxying, persistence, runtime configuration, and live monitoring.
 - `src/NilDev.BridgeLM.Infrastructure` contains SQLite persistence, schema initialization, and the upstream HTTP forwarder.
-- `src/NilDev.BridgeLM.Dashboard` contains the React 19 dashboard source built with Vite 8.
 - `tests` contains unit and integration tests.
 
 ## Endpoints
@@ -31,17 +30,7 @@ dotnet publish .\src\NilDev.BridgeLM\NilDev.BridgeLM.csproj -c Release -r win-x6
 dotnet test .\tests\NilDev.BridgeLM.Application.Tests\NilDev.BridgeLM.Application.Tests.csproj -c Release
 ```
 
-### Frontend
-
-The dashboard source expects the latest stable Node.js runtime and npm. Once they are installed:
-
-```powershell
-Set-Location .\src\NilDev.BridgeLM.Dashboard
-npm install
-npm run build
-```
-
-The Vite build writes static assets into `src/NilDev.BridgeLM/wwwroot` so the ASP.NET Core host serves them directly.
+The dashboard lives directly under `src/NilDev.BridgeLM/wwwroot` and is served as static assets by the ASP.NET Core host. No separate Node, npm, React, or Vite build is required.
 
 ## Container build
 
@@ -50,7 +39,7 @@ docker build -t nildev-bridgelm:latest .
 docker compose up --build
 ```
 
-The Dockerfile performs the dashboard build in a Node 24 stage and publishes the backend with Native AOT for `linux-x64`, producing a single runnable image.
+The Dockerfile publishes the backend with Native AOT for `linux-x64`, including the dashboard static assets already stored under `wwwroot`, and produces a single runnable image.
 
 Podman can use the same files:
 
