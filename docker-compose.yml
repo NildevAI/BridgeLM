@@ -1,0 +1,22 @@
+services:
+  bridgelm:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nildev-bridgelm:latest
+    ports:
+      - "8080:8080"
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      Bridge__Backend__Name: Default
+      Bridge__Backend__BaseUrl: http://host.docker.internal:11434/
+      Bridge__Backend__ApiKeyHeader: Authorization
+      Bridge__Backend__ApiKey: ""
+      Bridge__Storage__ConnectionString: Data Source=/app/data/bridgelm.db
+      Bridge__Storage__RecentRequestLimit: 200
+    volumes:
+      - bridgelm-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  bridgelm-data:

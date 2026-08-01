@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/NilDev.BridgeLM.Application/NilDev.BridgeLM.Application.csproj" />
+    <Project Path="src/NilDev.BridgeLM.Domain/NilDev.BridgeLM.Domain.csproj" />
+    <Project Path="src/NilDev.BridgeLM.Infrastructure/NilDev.BridgeLM.Infrastructure.csproj" />
+    <Project Path="src/NilDev.BridgeLM/NilDev.BridgeLM.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/NilDev.BridgeLM.Application.Tests/NilDev.BridgeLM.Application.Tests.csproj" />
+    <Project Path="tests/NilDev.BridgeLM.IntegrationTests/NilDev.BridgeLM.IntegrationTests.csproj" />
+  </Folder>
+</Solution>

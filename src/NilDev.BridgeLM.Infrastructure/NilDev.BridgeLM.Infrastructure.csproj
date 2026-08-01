@@ -1,0 +1,16 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Http" />
+    <ProjectReference Include="..\NilDev.BridgeLM.Application\NilDev.BridgeLM.Application.csproj" />
+    <ProjectReference Include="..\NilDev.BridgeLM.Domain\NilDev.BridgeLM.Domain.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

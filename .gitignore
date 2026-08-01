@@ -1,0 +1,16 @@
+bin/
+obj/
+.vs/
+.vscode/
+TestResults/
+artifacts/
+coverage/
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+src/NilDev.BridgeLM/wwwroot/
+*.db
+*.db-shm
+*.db-wal
