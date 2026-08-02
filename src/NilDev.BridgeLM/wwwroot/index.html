@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NilDev.BridgeLM Dashboard</title>
+    <link rel="stylesheet" href="/app.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <header class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">NilDev.BridgeLM</p>
+          <h1>Copilot bridge with live proxy telemetry</h1>
+          <p class="lead">
+            Inspect request flow, keep upstream credentials organized in reusable profiles, and switch the live bridge without leaving the dashboard.
+          </p>
+          <nav class="hero-nav" aria-label="Dashboard navigation">
+            <button type="button" class="nav-button" data-route="/">Dashboard</button>
+            <button type="button" class="nav-button" data-route="/configs">Manage Configs</button>
+          </nav>
+        </div>
+        <div class="hero-status">
+          <div class="status-row">
+              <div id="config-switcher" class="config-switcher" aria-label="Switch active proxy config">
+                <button
+                  id="config-switcher-trigger"
+                  type="button"
+                  class="config-switcher-trigger"
+                  aria-haspopup="listbox"
+                  aria-expanded="false"
+                  aria-controls="config-switcher-panel"
+                >
+                  <span class="config-switcher-copy">
+                    <span class="config-switcher-label">Live config</span>
+                    <span id="config-switcher-value" class="config-switcher-value">No saved configs</span>
+                  </span>
+                  <span class="config-switcher-caret" aria-hidden="true"></span>
+                </button>
+                <div id="config-switcher-panel" class="config-switcher-panel" hidden>
+                  <label class="config-switcher-search-shell" for="config-switcher-search">
+                    <span class="sr-only">Search saved configs</span>
+                    <input
+                      id="config-switcher-search"
+                      class="config-switcher-search"
+                      type="search"
+                      placeholder="Search saved configs"
+                      autocomplete="off"
+                      spellcheck="false"
+                    />
+                  </label>
+                  <div id="config-switcher-results" class="config-switcher-results" role="listbox"></div>
+                </div>
+              </div>
+            <div id="connection-state" class="status-chip status-connecting">connecting</div>
+          </div>
+        </div>
+      </header>
+
+      <main>
+        <section id="dashboard-view" class="page-view">
+          <div class="dashboard-grid">
+            <section class="panel panel-requests">
+              <div class="panel-title-row">
+                <h2>Recent requests</h2>
+                <button id="refresh-requests" type="button" class="ghost-button">Refresh</button>
+              </div>
+              <div id="request-list" class="request-list"></div>
+            </section>
+
+            <section class="panel panel-detail">
+              <div class="panel-title-row">
+                <h2>Request detail</h2>
+                <span id="selected-request-id" class="panel-hint">No selection</span>
+              </div>
+              <div id="request-detail"></div>
+            </section>
+
+            <section class="panel panel-live">
+              <div class="panel-title-row">
+                <h2>Live feed</h2>
+                <span class="panel-hint">SignalR event stream</span>
+              </div>
+              <div id="feed-list" class="feed-list"></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="manage-view" class="page-view" hidden>
+          <div class="management-grid">
+            <section class="panel">
+              <div class="panel-title-row">
+                <div>
+                  <h2>Saved proxy configs</h2>
+                  <p class="panel-copy">Named profiles persisted in SQLite with explicit active and default state.</p>
+                </div>
+                <div class="button-row compact-row">
+                  <button id="refresh-configs" type="button" class="ghost-button">Refresh</button>
+                  <button id="create-config-button" type="button" class="ghost-button">Create new</button>
+                </div>
+              </div>
+              <div id="config-list" class="config-list"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-title-row">
+                <div>
+                  <h2>Config editor</h2>
+                  <p id="manage-config-meta" class="panel-copy">Select a saved config or start a new one from the active runtime settings.</p>
+                </div>
+                <div id="manage-config-badges" class="badge-row"></div>
+              </div>
+                <form id="manage-config-form" class="config-form" novalidate>
+                  <div id="manage-form-error" class="form-error" hidden></div>
+                  <label class="form-field">
+                    <span>Config name</span>
+                    <input id="manage-backend-name" />
+                    <span id="manage-backend-name-error" class="field-error" hidden></span>
+                </label>
+                  <label class="form-field">
+                    <span>Backend base URL</span>
+                    <input id="manage-backend-base-url" />
+                    <span id="manage-backend-base-url-error" class="field-error" hidden></span>
+                </label>
+                  <label class="form-field">
+                    <span>API key header</span>
+                    <input id="manage-api-key-header" />
+                    <span id="manage-api-key-header-error" class="field-error" hidden></span>
+                </label>
+                  <label class="form-field">
+                    <span>New API key</span>
+                    <input id="manage-api-key" type="password" />
+                    <span id="manage-api-key-error" class="field-error" hidden></span>
+                </label>
+                  <label class="form-field">
+                    <span>SQLite connection string</span>
+                    <input id="manage-connection-string" />
+                    <span id="manage-connection-string-error" class="field-error" hidden></span>
+                </label>
+                  <label class="form-field">
+                    <span>Recent request limit</span>
+                  <input id="manage-recent-request-limit" type="number" min="1" />
+                    <span id="manage-recent-request-limit-error" class="field-error" hidden></span>
+                </label>
+                <div class="button-row action-grid">
+                  <button id="manage-save-button" type="submit">Save config</button>
+                  <button id="manage-select-button" type="button" class="ghost-button">Make active</button>
+                  <button id="manage-rename-button" type="button" class="ghost-button">Rename</button>
+                  <button id="manage-duplicate-button" type="button" class="ghost-button">Duplicate</button>
+                  <button id="manage-delete-button" type="button" class="ghost-button danger-button">Delete</button>
+                </div>
+              </form>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="/lib/signalr/signalr.js"></script>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

@@ -379,11 +379,28 @@ static IResult ToConfigurationErrorResult(InvalidOperationException exception)
 		_ => ("config_error", exception.Message, StatusCodes.Status400BadRequest)
 	};
 
+	var fieldErrors = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+	List<string>? formErrors = null;
+
+	switch (exception)
+	{
+		case BridgeConfigurationValidationException when detail.Contains("name is required", StringComparison.OrdinalIgnoreCase):
+		case BridgeConfigurationValidationException when detail.Contains("path separators", StringComparison.OrdinalIgnoreCase):
+		case BridgeConfigurationConflictException when detail.Contains("already exists", StringComparison.OrdinalIgnoreCase):
+			fieldErrors["name"] = [detail];
+			break;
+		default:
+			formErrors = [detail];
+			break;
+	}
+
 	return Results.Json(
 		new ApiError
 		{
 			Error = error,
-			Detail = detail
+			Detail = detail,
+			FormErrors = formErrors,
+			FieldErrors = fieldErrors.Count > 0 ? fieldErrors : null
 		},
 		BridgeJsonSerializerContext.Default.ApiError,
 		statusCode: statusCode);
