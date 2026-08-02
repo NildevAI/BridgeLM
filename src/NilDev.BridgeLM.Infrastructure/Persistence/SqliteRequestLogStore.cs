@@ -6,7 +6,7 @@ using NilDev.BridgeLM.Domain.Models;
 
 public sealed class SqliteRequestLogStore(SqliteSchemaInitializer schemaInitializer, ISqliteConnectionFactory connectionFactory) : IRequestLogStore
 {
-    public Task InitializeAsync(CancellationToken cancellationToken) => schemaInitializer.InitializeAsync(cancellationToken);
+    public Task InitializeAsync(CancellationToken cancellationToken) => schemaInitializer.InitializeRequestLogStoreAsync(cancellationToken);
 
     public async Task AddAsync(ProxyRequestLog log, CancellationToken cancellationToken)
     {

@@ -9,8 +9,11 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddBridgeInfrastructure(this IServiceCollection services)
     {
-        services.AddSingleton<ISqliteConnectionFactory, SqliteConnectionFactory>();
+        services.AddSingleton<SqliteConnectionFactory>();
+        services.AddSingleton<ISqliteConnectionFactory>(static serviceProvider => serviceProvider.GetRequiredService<SqliteConnectionFactory>());
+        services.AddSingleton<IBridgeConfigurationConnectionFactory>(static serviceProvider => serviceProvider.GetRequiredService<SqliteConnectionFactory>());
         services.AddSingleton<SqliteSchemaInitializer>();
+        services.AddSingleton<IBridgeConfigurationStore, SqliteBridgeConfigurationStore>();
         services.AddSingleton<IRequestLogStore, SqliteRequestLogStore>();
         services.AddHttpClient<ILlmForwarder, ConfiguredLlmForwarder>();
 

@@ -1,13 +1,27 @@
 namespace NilDev.BridgeLM.Infrastructure.Persistence;
 
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Options;
 using NilDev.BridgeLM.Domain.Abstractions;
+using NilDev.BridgeLM.Domain.Models;
 
-public sealed class SqliteConnectionFactory(IBridgeRuntimeSettingsStore runtimeSettingsStore) : ISqliteConnectionFactory
+public sealed class SqliteConnectionFactory(
+    IBridgeRuntimeSettingsStore runtimeSettingsStore,
+    IOptions<BridgeRuntimeOptions> bootstrapOptions)
+    : ISqliteConnectionFactory, IBridgeConfigurationConnectionFactory
 {
-    public SqliteConnection CreateConnection()
+    SqliteConnection ISqliteConnectionFactory.CreateConnection()
     {
-        var connectionString = runtimeSettingsStore.GetCurrent().Storage.ConnectionString;
+        return CreateConnection(runtimeSettingsStore.GetCurrent().Storage.ConnectionString);
+    }
+
+    SqliteConnection IBridgeConfigurationConnectionFactory.CreateConnection()
+    {
+        return CreateConnection(bootstrapOptions.Value.Storage.ConnectionString);
+    }
+
+    private static SqliteConnection CreateConnection(string connectionString)
+    {
         var builder = new SqliteConnectionStringBuilder(connectionString);
 
         if (!string.IsNullOrWhiteSpace(builder.DataSource))

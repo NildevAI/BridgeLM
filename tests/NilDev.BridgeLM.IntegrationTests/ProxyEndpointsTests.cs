@@ -35,6 +35,77 @@ public sealed class ProxyEndpointsTests : IClassFixture<ProxyWebApplicationFacto
     }
 
     [Fact]
+    public async Task ConfigCatalog_SupportsCreateSelectDuplicateRenameAndDelete()
+    {
+        var listResponse = await client.GetAsync("/api/configs");
+        listResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var initialList = await listResponse.Content.ReadFromJsonAsync(
+            IntegrationTestJsonContext.Default.ListBridgeNamedConfigurationSummary);
+        initialList.Should().NotBeNull();
+        initialList!.Should().ContainSingle(configuration => configuration.Name == "Primary");
+        initialList[0].IsActive.Should().BeTrue();
+
+        var createResponse = await client.PostAsJsonAsync(
+            "/api/configs",
+            new BridgeNamedConfigurationCreate
+            {
+                Name = "Secondary",
+                BackendName = "SecondaryBackend",
+                BackendBaseUrl = "http://secondary.local/",
+                RecentRequestLimit = 25
+            },
+            IntegrationTestJsonContext.Default.BridgeNamedConfigurationCreate);
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var created = await createResponse.Content.ReadFromJsonAsync(
+            IntegrationTestJsonContext.Default.BridgeNamedConfigurationView);
+        created.Should().NotBeNull();
+        created!.Configuration.BackendName.Should().Be("SecondaryBackend");
+
+        var selectResponse = await client.PostAsync("/api/configs/Secondary/select", content: null);
+        selectResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var activeConfigResponse = await client.GetAsync("/api/config");
+        var activeConfig = await activeConfigResponse.Content.ReadFromJsonAsync(
+            IntegrationTestJsonContext.Default.BridgeConfigurationView);
+        activeConfig.Should().NotBeNull();
+        activeConfig!.BackendName.Should().Be("SecondaryBackend");
+
+        var duplicateResponse = await client.PostAsJsonAsync(
+            "/api/configs/Secondary/duplicate",
+            new BridgeDuplicateConfigurationRequest { Name = "Secondary Copy" },
+            IntegrationTestJsonContext.Default.BridgeDuplicateConfigurationRequest);
+        duplicateResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var renameResponse = await client.PostAsJsonAsync(
+            "/api/configs/Secondary/rename",
+            new BridgeRenameConfigurationRequest { Name = "Renamed" },
+            IntegrationTestJsonContext.Default.BridgeRenameConfigurationRequest);
+        renameResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var renamed = await renameResponse.Content.ReadFromJsonAsync(
+            IntegrationTestJsonContext.Default.BridgeNamedConfigurationView);
+        renamed.Should().NotBeNull();
+        renamed!.Name.Should().Be("Renamed");
+        renamed.IsActive.Should().BeTrue();
+
+        var resetActiveResponse = await client.PostAsync("/api/configs/Primary/select", content: null);
+        resetActiveResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var deleteResponse = await client.DeleteAsync("/api/configs/Renamed");
+        deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var duplicateDeleteResponse = await client.DeleteAsync("/api/configs/Secondary%20Copy");
+        duplicateDeleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var finalListResponse = await client.GetAsync("/api/configs");
+        var finalList = await finalListResponse.Content.ReadFromJsonAsync(
+            IntegrationTestJsonContext.Default.ListBridgeNamedConfigurationSummary);
+        finalList.Should().NotBeNull();
+        finalList!.Should().ContainSingle(configuration => configuration.Name == "Primary" && configuration.IsActive);
+    }
+
+    [Fact]
     public async Task ProxyRequest_IsForwardedAndLogged()
     {
         var response = await client.PostAsync(
@@ -68,7 +139,9 @@ public sealed class ProxyWebApplicationFactory : WebApplicationFactory<Program>
         builder.UseEnvironment("Development");
         builder.ConfigureServices(services =>
         {
-            ReplaceService<IBridgeRuntimeSettingsStore>(services, new IntegrationSettingsStore());
+            var runtimeStore = new IntegrationSettingsStore();
+            ReplaceService<IBridgeRuntimeSettingsStore>(services, runtimeStore);
+            ReplaceService<IBridgeConfigurationStore>(services, new IntegrationConfigurationStore(runtimeStore));
             ReplaceService<ILlmForwarder>(services, new IntegrationForwarder());
             ReplaceService<IProxyEventSink>(services, new NullProxyEventSink());
         });
@@ -88,7 +161,16 @@ public sealed class ProxyWebApplicationFactory : WebApplicationFactory<Program>
 
     private sealed class IntegrationSettingsStore : IBridgeRuntimeSettingsStore
     {
-        private readonly BridgeRuntimeOptions options = new()
+        private BridgeRuntimeOptions options = CreateOptions();
+
+        public BridgeRuntimeOptions GetCurrent() => Clone(options);
+
+        public void Update(BridgeRuntimeOptions next)
+        {
+            options = Clone(next);
+        }
+
+        public static BridgeRuntimeOptions CreateOptions() => new()
         {
             Backend = new BridgeBackendOptions
             {
@@ -103,13 +185,97 @@ public sealed class ProxyWebApplicationFactory : WebApplicationFactory<Program>
                 RecentRequestLimit = 10
             }
         };
+    }
 
-        public BridgeRuntimeOptions GetCurrent() => options;
-
-        public void Update(BridgeRuntimeOptions options)
+    private sealed class IntegrationConfigurationStore(IntegrationSettingsStore runtimeStore) : IBridgeConfigurationStore
+    {
+        private readonly Dictionary<string, BridgeSavedConfiguration> configurations = new(StringComparer.OrdinalIgnoreCase)
         {
+            ["Primary"] = new BridgeSavedConfiguration
+            {
+                Name = "Primary",
+                Options = Clone(runtimeStore.GetCurrent()),
+                IsActive = true,
+                CreatedAtUtc = DateTimeOffset.UtcNow,
+                UpdatedAtUtc = DateTimeOffset.UtcNow
+            }
+        };
+
+        public Task EnsureInitializedAsync(BridgeSavedConfiguration seedConfiguration, CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task<IReadOnlyList<BridgeSavedConfiguration>> ListAsync(CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<BridgeSavedConfiguration>>(
+                configurations.Values
+                    .OrderBy(configuration => configuration.Name, StringComparer.OrdinalIgnoreCase)
+                    .Select(CloneSavedConfiguration)
+                    .ToList());
+
+        public Task<BridgeSavedConfiguration?> GetAsync(string name, CancellationToken cancellationToken)
+        {
+            configurations.TryGetValue(name, out var configuration);
+            return Task.FromResult(configuration is null ? null : CloneSavedConfiguration(configuration));
+        }
+
+        public Task CreateOrUpdateAsync(BridgeSavedConfiguration configuration, CancellationToken cancellationToken)
+        {
+            configurations[configuration.Name] = CloneSavedConfiguration(configuration);
+            return Task.CompletedTask;
+        }
+
+        public Task<bool> RenameAsync(string currentName, string newName, CancellationToken cancellationToken)
+        {
+            if (!configurations.Remove(currentName, out var configuration))
+            {
+                return Task.FromResult(false);
+            }
+
+            configurations[newName] = new BridgeSavedConfiguration
+            {
+                Name = newName,
+                Options = Clone(configuration.Options),
+                IsActive = configuration.IsActive,
+                CreatedAtUtc = configuration.CreatedAtUtc,
+                UpdatedAtUtc = configuration.UpdatedAtUtc
+            };
+
+            return Task.FromResult(true);
+        }
+
+        public Task<bool> DeleteAsync(string name, CancellationToken cancellationToken) =>
+            Task.FromResult(configurations.Remove(name));
+
+        public Task<bool> SetActiveAsync(string name, CancellationToken cancellationToken)
+        {
+            if (!configurations.ContainsKey(name))
+            {
+                return Task.FromResult(false);
+            }
+
+            foreach (var key in configurations.Keys.ToList())
+            {
+                var configuration = configurations[key];
+                configurations[key] = new BridgeSavedConfiguration
+                {
+                    Name = configuration.Name,
+                    Options = Clone(configuration.Options),
+                    IsActive = string.Equals(key, name, StringComparison.OrdinalIgnoreCase),
+                    CreatedAtUtc = configuration.CreatedAtUtc,
+                    UpdatedAtUtc = DateTimeOffset.UtcNow
+                };
+            }
+
+            return Task.FromResult(true);
         }
     }
+
+    private static BridgeSavedConfiguration CloneSavedConfiguration(BridgeSavedConfiguration configuration) => new()
+    {
+        Name = configuration.Name,
+        Options = Clone(configuration.Options),
+        IsActive = configuration.IsActive,
+        CreatedAtUtc = configuration.CreatedAtUtc,
+        UpdatedAtUtc = configuration.UpdatedAtUtc
+    };
 
     private sealed class IntegrationForwarder : ILlmForwarder
     {
@@ -132,4 +298,21 @@ public sealed class ProxyWebApplicationFactory : WebApplicationFactory<Program>
 
         public Task RequestCompletedAsync(ProxyRequestSummary summary, CancellationToken cancellationToken) => Task.CompletedTask;
     }
+
+    private static BridgeRuntimeOptions Clone(BridgeRuntimeOptions options) => new()
+    {
+        Backend = new BridgeBackendOptions
+        {
+            Name = options.Backend.Name,
+            BaseUrl = options.Backend.BaseUrl,
+            ApiKeyHeader = options.Backend.ApiKeyHeader,
+            ApiKey = options.Backend.ApiKey,
+            DefaultHeaders = new Dictionary<string, string>(options.Backend.DefaultHeaders, StringComparer.OrdinalIgnoreCase)
+        },
+        Storage = new BridgeStorageOptions
+        {
+            ConnectionString = options.Storage.ConnectionString,
+            RecentRequestLimit = options.Storage.RecentRequestLimit
+        }
+    };
 }
