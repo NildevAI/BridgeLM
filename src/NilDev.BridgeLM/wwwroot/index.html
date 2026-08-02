@@ -62,18 +62,16 @@
           <div class="dashboard-grid">
             <section class="panel panel-requests">
               <div class="panel-title-row">
-                <h2>Recent requests</h2>
-                <button id="refresh-requests" type="button" class="ghost-button">Refresh</button>
+                <div>
+                  <h2>Recent requests</h2>
+                  <p class="panel-copy">Open a captured request to inspect payloads and exact timing.</p>
+                </div>
+                <div class="button-row compact-row">
+                  <button id="refresh-requests" type="button" class="ghost-button">Refresh</button>
+                  <button id="truncate-requests" type="button" class="ghost-button danger-button">Truncate all</button>
+                </div>
               </div>
               <div id="request-list" class="request-list"></div>
-            </section>
-
-            <section class="panel panel-detail">
-              <div class="panel-title-row">
-                <h2>Request detail</h2>
-                <span id="selected-request-id" class="panel-hint">No selection</span>
-              </div>
-              <div id="request-detail"></div>
             </section>
 
             <section class="panel panel-live">
@@ -154,6 +152,30 @@
           </div>
         </section>
       </main>
+
+      <div id="request-detail-modal" class="request-detail-modal" hidden>
+        <section
+          class="request-detail-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="request-detail-title"
+          aria-describedby="request-detail-meta"
+          tabindex="-1"
+        >
+          <div class="request-detail-header">
+            <div>
+              <p class="eyebrow modal-eyebrow">Request details</p>
+              <h2 id="request-detail-title">Captured proxy exchange</h2>
+              <p id="request-detail-meta" class="panel-copy">No request selected.</p>
+            </div>
+            <button id="close-request-detail" type="button" class="icon-button" aria-label="Close request details">×</button>
+          </div>
+          <div class="button-row request-detail-actions">
+            <button id="delete-request" type="button" class="ghost-button danger-button">Delete request</button>
+          </div>
+          <div id="request-detail"></div>
+        </section>
+      </div>
     </div>
 
     <script src="/lib/signalr/signalr.js"></script>

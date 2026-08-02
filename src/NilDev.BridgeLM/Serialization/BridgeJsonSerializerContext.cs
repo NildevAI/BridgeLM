@@ -17,6 +17,7 @@ using NilDev.BridgeLM.Domain.Models;
 [JsonSerializable(typeof(List<BridgeNamedConfigurationSummary>))]
 [JsonSerializable(typeof(ProxyRequestLog))]
 [JsonSerializable(typeof(ProxyRequestSummary))]
+[JsonSerializable(typeof(ProxyResponseChunk))]
 [JsonSerializable(typeof(List<ProxyRequestSummary>))]
 internal partial class BridgeJsonSerializerContext : JsonSerializerContext
 {

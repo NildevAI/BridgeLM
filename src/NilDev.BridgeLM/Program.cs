@@ -16,7 +16,10 @@ builder.Services.Configure<BridgeRuntimeOptions>(
 	builder.Configuration.GetSection(BridgeRuntimeOptions.SectionName));
 builder.Services.ConfigureHttpJsonOptions(options =>
 	options.SerializerOptions.TypeInfoResolverChain.Insert(0, BridgeJsonSerializerContext.Default));
-builder.Services.AddSignalR();
+builder.Services
+	.AddSignalR()
+	.AddJsonProtocol(options =>
+		options.PayloadSerializerOptions.TypeInfoResolverChain.Insert(0, BridgeJsonSerializerContext.Default));
 builder.Services.AddHealthChecks();
 builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
 builder.Services.AddSingleton<IBridgeRuntimeSettingsStore, InMemoryBridgeRuntimeSettingsStore>();
@@ -217,6 +220,16 @@ app.MapGet("/api/requests/{requestId}", async (string requestId, BridgeProxyServ
 			BridgeJsonSerializerContext.Default.ApiError,
 			statusCode: StatusCodes.Status404NotFound)
 		: Results.Json(log, BridgeJsonSerializerContext.Default.ProxyRequestLog);
+});
+app.MapDelete("/api/requests/{requestId}", async (string requestId, BridgeProxyService service, CancellationToken cancellationToken) =>
+{
+	await service.DeleteAsync(requestId, cancellationToken);
+	return Results.NoContent();
+});
+app.MapDelete("/api/requests", async (BridgeProxyService service, CancellationToken cancellationToken) =>
+{
+	await service.TruncateAsync(cancellationToken);
+	return Results.NoContent();
 });
 app.MapHealthChecks("/health");
 app.MapHub<BridgeHub>("/hubs/bridge");

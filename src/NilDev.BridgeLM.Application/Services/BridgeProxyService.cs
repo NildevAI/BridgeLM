@@ -73,6 +73,12 @@ public sealed class BridgeProxyService(
     public Task<ProxyRequestLog?> GetAsync(string requestId, CancellationToken cancellationToken) =>
         requestLogStore.GetAsync(requestId, cancellationToken);
 
+    public Task DeleteAsync(string requestId, CancellationToken cancellationToken) =>
+        requestLogStore.DeleteAsync(requestId, cancellationToken);
+
+    public Task TruncateAsync(CancellationToken cancellationToken) =>
+        requestLogStore.TruncateAsync(cancellationToken);
+
     public BridgeConfigurationView GetConfiguration()
     {
         var current = runtimeSettingsStore.GetCurrent();

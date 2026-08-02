@@ -176,6 +176,30 @@ public sealed class SqliteRequestLogStore(SqliteSchemaInitializer schemaInitiali
         return results;
     }
 
+    public async Task DeleteAsync(string requestId, CancellationToken cancellationToken)
+    {
+        await using var connection = connectionFactory.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            DELETE FROM request_logs
+            WHERE id = $id;
+            """;
+        command.Parameters.AddWithValue("$id", requestId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task TruncateAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = connectionFactory.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            DELETE FROM request_logs;
+            """;
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     private static void AddLogParameters(SqliteCommand command, ProxyRequestLog log)
     {
         command.Parameters.AddWithValue("$id", log.Id);

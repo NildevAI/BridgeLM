@@ -3,22 +3,55 @@ namespace NilDev.BridgeLM.IntegrationTests;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text;
+using System.Text.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using NilDev.BridgeLM.Domain.Abstractions;
 using NilDev.BridgeLM.Domain.Models;
+using NilDev.BridgeLM.Serialization;
 using NilDev.BridgeLM.IntegrationTests.Serialization;
 using Xunit;
 
 public sealed class ProxyEndpointsTests : IClassFixture<ProxyWebApplicationFactory>
 {
     private readonly HttpClient client;
+    private readonly ProxyWebApplicationFactory factory;
 
     public ProxyEndpointsTests(ProxyWebApplicationFactory factory)
     {
+        this.factory = factory;
         client = factory.CreateClient();
+    }
+
+    [Fact]
+    public void SignalRJsonProtocol_UsesBridgeSerializerContext()
+    {
+        var options = factory.Services.GetRequiredService<IOptions<JsonHubProtocolOptions>>().Value;
+
+        options.PayloadSerializerOptions.TypeInfoResolverChain.Should().NotBeEmpty();
+        options.PayloadSerializerOptions.GetTypeInfo(typeof(ProxyResponseChunk)).Should().NotBeNull();
+    }
+
+    [Fact]
+    public void SignalRJsonProtocol_CanSerializeProxyResponseChunk()
+    {
+        var serializerOptions = factory.Services
+            .GetRequiredService<IOptions<JsonHubProtocolOptions>>()
+            .Value
+            .PayloadSerializerOptions;
+
+        JsonSerializer.Serialize(
+            new ProxyResponseChunk
+            {
+                RequestId = Guid.NewGuid().ToString("N"),
+                Content = "chunk",
+                TimestampUtc = DateTimeOffset.UtcNow
+            },
+            serializerOptions).Should().Contain("chunk");
     }
 
     [Fact]
@@ -129,6 +162,45 @@ public sealed class ProxyEndpointsTests : IClassFixture<ProxyWebApplicationFacto
             IntegrationTestJsonContext.Default.ProxyRequestLog);
         details.Should().NotBeNull();
         details!.ResponseBody.Should().Contain("proxied");
+    }
+
+    [Fact]
+    public async Task RequestLogEndpoints_SupportDeleteAndTruncate()
+    {
+        await client.PostAsync(
+            "/proxy/v1/chat/completions?model=gpt-delete",
+            new StringContent("{\"prompt\":\"delete-one\"}", Encoding.UTF8, "application/json"));
+        await client.PostAsync(
+            "/proxy/v1/chat/completions?model=gpt-delete",
+            new StringContent("{\"prompt\":\"delete-all\"}", Encoding.UTF8, "application/json"));
+
+        var requestsResponse = await client.GetAsync("/api/requests");
+        var requests = await requestsResponse.Content.ReadFromJsonAsync(
+            IntegrationTestJsonContext.Default.ListProxyRequestSummary);
+
+        requests.Should().NotBeNull();
+        requests!.Should().HaveCount(2);
+
+        var deleteResponse = await client.DeleteAsync($"/api/requests/{requests[0].Id}");
+        deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var afterDeleteResponse = await client.GetAsync("/api/requests");
+        var afterDelete = await afterDeleteResponse.Content.ReadFromJsonAsync(
+            IntegrationTestJsonContext.Default.ListProxyRequestSummary);
+
+        afterDelete.Should().NotBeNull();
+        afterDelete!.Should().HaveCount(1);
+        afterDelete[0].Id.Should().NotBe(requests[0].Id);
+
+        var truncateResponse = await client.DeleteAsync("/api/requests");
+        truncateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var emptyResponse = await client.GetAsync("/api/requests");
+        var empty = await emptyResponse.Content.ReadFromJsonAsync(
+            IntegrationTestJsonContext.Default.ListProxyRequestSummary);
+
+        empty.Should().NotBeNull();
+        empty.Should().BeEmpty();
     }
 }
 

@@ -40,6 +40,10 @@ const state = {
   requests: [],
   selectedRequestId: null,
   selectedRequest: null,
+  isRequestDetailOpen: false,
+  isRequestDetailLoading: false,
+  isDeletingRequest: false,
+  isTruncatingRequests: false,
   liveFeed: [],
   draftApiKey: '',
   isSaving: false,
@@ -68,9 +72,14 @@ const elements = {
   configSwitcherResults: document.getElementById('config-switcher-results'),
   connectionState: document.getElementById('connection-state'),
   refreshRequests: document.getElementById('refresh-requests'),
+  truncateRequests: document.getElementById('truncate-requests'),
   requestList: document.getElementById('request-list'),
   requestDetail: document.getElementById('request-detail'),
-  selectedRequestId: document.getElementById('selected-request-id'),
+  requestDetailModal: document.getElementById('request-detail-modal'),
+  requestDetailDialog: document.querySelector('.request-detail-dialog'),
+  requestDetailMeta: document.getElementById('request-detail-meta'),
+  closeRequestDetail: document.getElementById('close-request-detail'),
+  deleteRequest: document.getElementById('delete-request'),
   feedList: document.getElementById('feed-list'),
   refreshConfigs: document.getElementById('refresh-configs'),
   createConfigButton: document.getElementById('create-config-button'),
@@ -117,6 +126,97 @@ function escapeHtml(value) {
 
 function selectedSummary() {
   return state.requests.find((request) => request.id === state.selectedRequestId) ?? null;
+}
+
+function hasRequestSelection() {
+  return Boolean(state.selectedRequestId);
+}
+
+function formatPreciseTimestamp(value) {
+  if (!value) {
+    return 'unknown';
+  }
+
+  const timestamp = new Date(value);
+  if (Number.isNaN(timestamp.getTime())) {
+    return 'unknown';
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    fractionalSecondDigits: 3,
+  }).format(timestamp);
+}
+
+function formatDuration(durationMs) {
+  return durationMs == null ? 'pending' : `${durationMs} ms`;
+}
+
+function renderRequestDetailMeta(summary, detail) {
+  if (!summary && !detail) {
+    return 'No request selected.';
+  }
+
+  const requestId = detail?.id ?? summary?.id ?? 'unknown';
+  const startedAt = formatPreciseTimestamp(detail?.startedAtUtc ?? summary?.startedAtUtc);
+  const completedAt = formatPreciseTimestamp(detail?.completedAtUtc);
+  const duration = formatDuration(detail?.durationMs ?? summary?.durationMs);
+  const status = detail?.status ?? summary?.status ?? 'Pending';
+
+  return `Request ${requestId} · ${status} · started ${startedAt} · completed ${completedAt} · duration ${duration}`;
+}
+
+function renderRequestDetailModal() {
+  elements.requestDetailModal.hidden = !state.isRequestDetailOpen;
+  elements.requestDetailModal.setAttribute('aria-hidden', state.isRequestDetailOpen ? 'false' : 'true');
+  document.body.classList.toggle('modal-open', state.isRequestDetailOpen);
+}
+
+function setRequestDetailOpen(isOpen) {
+  state.isRequestDetailOpen = isOpen && hasRequestSelection();
+  renderRequestDetailModal();
+
+  if (state.isRequestDetailOpen) {
+    window.requestAnimationFrame(() => {
+      elements.requestDetailDialog.focus();
+    });
+    return;
+  }
+
+  const trigger = state.selectedRequestId
+    ? elements.requestList.querySelector(`[data-request-id="${CSS.escape(state.selectedRequestId)}"]`)
+    : null;
+
+  if (trigger instanceof HTMLElement) {
+    window.requestAnimationFrame(() => {
+      trigger.focus();
+    });
+  }
+}
+
+function clearSelectedRequest({ closeModal = false } = {}) {
+  state.selectedRequestId = null;
+  state.selectedRequest = null;
+  state.isRequestDetailLoading = false;
+  if (closeModal) {
+    state.isRequestDetailOpen = false;
+    renderRequestDetailModal();
+  }
+}
+
+function removeRequestFromState(requestId) {
+  state.requests = state.requests.filter((request) => request.id !== requestId);
+
+  if (state.selectedRequestId === requestId) {
+    state.selectedRequestId = state.requests[0]?.id ?? null;
+    state.selectedRequest = null;
+    state.isRequestDetailLoading = false;
+  }
 }
 
 function appendFeed(line) {
@@ -453,7 +553,8 @@ function renderRequests() {
             <span>${escapeHtml(request.status)}</span>
           </div>
           <p>${escapeHtml(request.path)}</p>
-          <small>${escapeHtml(request.backendName)} · ${escapeHtml(request.durationMs ?? 0)} ms</small>
+          <small class="request-timestamp">${escapeHtml(formatPreciseTimestamp(request.startedAtUtc))}</small>
+          <small>${escapeHtml(request.backendName)} · ${escapeHtml(formatDuration(request.durationMs))}</small>
         </button>`;
     })
     .join('');
@@ -461,7 +562,15 @@ function renderRequests() {
 
 function renderRequestDetail() {
   const summary = selectedSummary();
-  elements.selectedRequestId.textContent = summary?.id ?? 'No selection';
+  elements.requestDetailMeta.textContent = renderRequestDetailMeta(summary, state.selectedRequest);
+  elements.deleteRequest.disabled = !summary || state.isDeletingRequest || state.isTruncatingRequests;
+  elements.deleteRequest.textContent = state.isDeletingRequest ? 'Deleting...' : 'Delete request';
+  elements.requestDetail.setAttribute('aria-busy', state.isRequestDetailLoading ? 'true' : 'false');
+
+  if (state.isRequestDetailLoading && summary) {
+    elements.requestDetail.innerHTML = '<p class="empty-state">Loading request detail...</p>';
+    return;
+  }
 
   if (!state.selectedRequest) {
     elements.requestDetail.innerHTML = '<p class="empty-state">Select a request to inspect the captured payloads.</p>';
@@ -470,6 +579,43 @@ function renderRequestDetail() {
 
   elements.requestDetail.innerHTML = `
     <div class="detail-stack">
+      <article class="detail-summary-card">
+        <h3>Request metadata</h3>
+        <dl class="detail-metadata-grid">
+          <div>
+            <dt>Request ID</dt>
+            <dd>${escapeHtml(state.selectedRequest.id)}</dd>
+          </div>
+          <div>
+            <dt>Status</dt>
+            <dd>${escapeHtml(state.selectedRequest.status)}</dd>
+          </div>
+          <div>
+            <dt>Backend</dt>
+            <dd>${escapeHtml(state.selectedRequest.backendName)}</dd>
+          </div>
+          <div>
+            <dt>Started</dt>
+            <dd>${escapeHtml(formatPreciseTimestamp(state.selectedRequest.startedAtUtc))}</dd>
+          </div>
+          <div>
+            <dt>Completed</dt>
+            <dd>${escapeHtml(formatPreciseTimestamp(state.selectedRequest.completedAtUtc))}</dd>
+          </div>
+          <div>
+            <dt>Duration</dt>
+            <dd>${escapeHtml(formatDuration(state.selectedRequest.durationMs))}</dd>
+          </div>
+          <div>
+            <dt>Response code</dt>
+            <dd>${escapeHtml(state.selectedRequest.responseStatusCode ?? 'pending')}</dd>
+          </div>
+          <div>
+            <dt>Path</dt>
+            <dd>${escapeHtml(`${state.selectedRequest.path}${state.selectedRequest.queryString ?? ''}`)}</dd>
+          </div>
+        </dl>
+      </article>
       <article>
         <h3>Request body</h3>
         <pre>${escapeHtml(state.selectedRequest.requestBody ?? '')}</pre>
@@ -569,6 +715,7 @@ function render() {
   renderConfigSwitcher();
   renderRequests();
   renderRequestDetail();
+  renderRequestDetailModal();
   renderLiveFeed();
   renderConfigList();
   renderManageEditor();
@@ -617,6 +764,10 @@ async function refreshConfig() {
 
 async function refreshRequests() {
   state.requests = await apiGetJson('/api/requests');
+  if (state.selectedRequestId && !state.requests.some((request) => request.id === state.selectedRequestId)) {
+    clearSelectedRequest({ closeModal: true });
+  }
+
   if (!state.selectedRequestId && state.requests.length > 0) {
     state.selectedRequestId = state.requests[0].id;
   }
@@ -626,11 +777,15 @@ async function refreshRequests() {
 }
 
 async function refreshRequestDetail(requestId) {
+  state.isRequestDetailLoading = true;
+  renderRequestDetail();
+
   try {
     state.selectedRequest = await apiGetJson(`/api/requests/${encodeURIComponent(requestId)}`);
-    renderRequestDetail();
   } catch {
     state.selectedRequest = null;
+  } finally {
+    state.isRequestDetailLoading = false;
     renderRequestDetail();
   }
 }
@@ -662,9 +817,73 @@ async function loadNamedConfig(name) {
 async function selectRequest(requestId) {
   state.selectedRequestId = requestId;
   state.selectedRequest = null;
+  state.isRequestDetailLoading = true;
   renderRequests();
   renderRequestDetail();
   await refreshRequestDetail(requestId);
+}
+
+async function openRequestDetail(requestId) {
+  state.selectedRequestId = requestId;
+  setRequestDetailOpen(true);
+  await selectRequest(requestId);
+}
+
+function closeRequestDetail() {
+  setRequestDetailOpen(false);
+}
+
+async function deleteRequest(requestId) {
+  if (!requestId) {
+    return;
+  }
+
+  const confirmed = window.confirm(`Delete request ${requestId}? This cannot be undone.`);
+  if (!confirmed) {
+    return;
+  }
+
+  state.isDeletingRequest = true;
+  renderRequestDetail();
+
+  try {
+    await apiFetch(`/api/requests/${encodeURIComponent(requestId)}`, { method: 'DELETE' });
+    removeRequestFromState(requestId);
+    closeRequestDetail();
+    renderRequests();
+    renderRequestDetail();
+  } catch (error) {
+    window.alert(getErrorMessage(error));
+  } finally {
+    state.isDeletingRequest = false;
+    renderRequestDetail();
+  }
+}
+
+async function truncateRequests() {
+  const confirmed = window.confirm('Delete all stored requests and clear the live feed? This cannot be undone.');
+  if (!confirmed) {
+    return;
+  }
+
+  state.isTruncatingRequests = true;
+  elements.truncateRequests.disabled = true;
+  elements.truncateRequests.textContent = 'Truncating...';
+
+  try {
+    await apiFetch('/api/requests', { method: 'DELETE' });
+    clearSelectedRequest({ closeModal: true });
+    state.requests = [];
+    state.liveFeed = [];
+    render();
+  } catch (error) {
+    window.alert(getErrorMessage(error));
+  } finally {
+    state.isTruncatingRequests = false;
+    elements.truncateRequests.disabled = false;
+    elements.truncateRequests.textContent = 'Truncate all';
+    renderRequestDetail();
+  }
 }
 
 function collectManagePayload() {
@@ -941,6 +1160,10 @@ function wireInputHandlers() {
     void refreshRequests();
   });
 
+  elements.truncateRequests.addEventListener('click', () => {
+    void truncateRequests();
+  });
+
   elements.refreshConfigs.addEventListener('click', () => {
     void refreshNamedConfigs();
   });
@@ -973,7 +1196,28 @@ function wireInputHandlers() {
 
     const requestId = button.dataset.requestId;
     if (requestId) {
-      void selectRequest(requestId);
+      void openRequestDetail(requestId);
+    }
+  });
+
+  elements.closeRequestDetail.addEventListener('click', () => {
+    closeRequestDetail();
+  });
+
+  elements.deleteRequest.addEventListener('click', () => {
+    void deleteRequest(state.selectedRequestId);
+  });
+
+  elements.requestDetailModal.addEventListener('click', (event) => {
+    if (event.target === elements.requestDetailModal) {
+      closeRequestDetail();
+    }
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && state.isRequestDetailOpen) {
+      event.preventDefault();
+      closeRequestDetail();
     }
   });
 
@@ -1037,6 +1281,7 @@ function wireSignalR() {
     appendFeed(`started ${request.method} ${request.path}`);
     state.requests = [request, ...state.requests.filter((entry) => entry.id !== request.id)].slice(0, 100);
     renderRequests();
+    renderRequestDetail();
   });
 
   connection.on('responseChunk', (chunk) => {
@@ -1054,6 +1299,7 @@ function wireSignalR() {
     appendFeed(`completed ${request.method} ${request.path} (${request.status})`);
     state.requests = state.requests.map((entry) => (entry.id === request.id ? request : entry));
     renderRequests();
+    renderRequestDetail();
     if (request.id === state.selectedRequestId) {
       void refreshRequestDetail(request.id);
     }

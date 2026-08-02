@@ -25,4 +25,8 @@ public interface IRequestLogStore
     Task<ProxyRequestLog?> GetAsync(string requestId, CancellationToken cancellationToken);
 
     Task<IReadOnlyList<ProxyRequestSummary>> ListRecentAsync(int limit, CancellationToken cancellationToken);
+
+    Task DeleteAsync(string requestId, CancellationToken cancellationToken);
+
+    Task TruncateAsync(CancellationToken cancellationToken);
 }

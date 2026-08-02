@@ -62,6 +62,71 @@ public sealed class BridgeProxyServiceTests
         await session.DisposeAsync();
     }
 
+    [Fact]
+    public async Task DeleteAsync_RemovesMatchingRequest()
+    {
+        var logStore = new InMemoryRequestLogStore();
+        var service = CreateService(logStore: logStore);
+
+        var session = await service.StartProxyAsync(
+            new ProxyInboundRequest
+            {
+                Method = "POST",
+                Path = "/v1/chat/completions",
+                QueryString = string.Empty,
+                ContentType = "application/json",
+                Body = Encoding.UTF8.GetBytes("{\"prompt\":\"delete\"}"),
+                Headers = new Dictionary<string, string[]>()
+            },
+            CancellationToken.None);
+
+        await service.DeleteAsync(session.RequestId, CancellationToken.None);
+        var persisted = await service.GetAsync(session.RequestId, CancellationToken.None);
+
+        persisted.Should().BeNull();
+
+        await session.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task TruncateAsync_RemovesAllRequests()
+    {
+        var logStore = new InMemoryRequestLogStore();
+        var service = CreateService(logStore: logStore);
+
+        var firstSession = await service.StartProxyAsync(
+            new ProxyInboundRequest
+            {
+                Method = "POST",
+                Path = "/v1/chat/completions",
+                QueryString = string.Empty,
+                ContentType = "application/json",
+                Body = Encoding.UTF8.GetBytes("{\"prompt\":\"first\"}"),
+                Headers = new Dictionary<string, string[]>()
+            },
+            CancellationToken.None);
+
+        var secondSession = await service.StartProxyAsync(
+            new ProxyInboundRequest
+            {
+                Method = "POST",
+                Path = "/v1/chat/completions",
+                QueryString = string.Empty,
+                ContentType = "application/json",
+                Body = Encoding.UTF8.GetBytes("{\"prompt\":\"second\"}"),
+                Headers = new Dictionary<string, string[]>()
+            },
+            CancellationToken.None);
+
+        await service.TruncateAsync(CancellationToken.None);
+        var requests = await service.ListRecentAsync(CancellationToken.None);
+
+        requests.Should().BeEmpty();
+
+        await firstSession.DisposeAsync();
+        await secondSession.DisposeAsync();
+    }
+
     private static BridgeProxyService CreateService(
         TestSettingsStore? settingsStore = null,
         InMemoryRequestLogStore? logStore = null,
@@ -167,6 +232,18 @@ public sealed class BridgeProxyServiceTests
             }).ToList();
 
             return Task.FromResult<IReadOnlyList<ProxyRequestSummary>>(summaries);
+        }
+
+        public Task DeleteAsync(string requestId, CancellationToken cancellationToken)
+        {
+            logs.Remove(requestId);
+            return Task.CompletedTask;
+        }
+
+        public Task TruncateAsync(CancellationToken cancellationToken)
+        {
+            logs.Clear();
+            return Task.CompletedTask;
         }
 
         private static ProxyRequestLog WithCompletion(
